@@ -415,6 +415,10 @@ func (app *p2pApp) listenTCP() error {
 				continue
 			}
 		}
+		appKey := app.key
+		if app.isDirect() && app.config.Protocol == "tcp" {
+			appKey = 0
+		}
 		oConn := overlayConn{
 			tunnel:   app.Tunnel(),
 			app:      app,
@@ -422,7 +426,7 @@ func (app *p2pApp) listenTCP() error {
 			id:       rand.Uint64(),
 			isClient: true,
 			appID:    app.id,
-			appKey:   app.key,
+			appKey:   appKey,
 			running:  true,
 		}
 		if !app.isDirect() {
