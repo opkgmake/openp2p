@@ -634,13 +634,17 @@ func (t *P2PTunnel) readLoop() {
 
 			overlayID := req.ID
 			gLog.Printf(LvDEBUG, "App:%d overlayID:%d connect %s:%d", req.AppID, overlayID, req.DstIP, req.DstPort)
+			appKey := GetKey(req.AppID)
+			if req.RelayTunnelID == 0 && req.Protocol == "tcp" {
+				appKey = 0
+			}
 			oConn := overlayConn{
 				tunnel:   t,
 				id:       overlayID,
 				isClient: false,
 				rtid:     req.RelayTunnelID,
 				appID:    req.AppID,
-				appKey:   GetKey(req.AppID),
+				appKey:   appKey,
 				running:  true,
 			}
 			if req.Protocol == "udp" {
