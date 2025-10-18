@@ -479,6 +479,7 @@ func (t *P2PTunnel) connectUnderlayTCP() (c underlay, err error) {
 	handshakeBegin := time.Now()
 	tidBuff := new(bytes.Buffer)
 	binary.Write(tidBuff, binary.LittleEndian, t.id)
+	t.writeHTTPPreface(ul)
 	ul.WriteBytes(MsgP2P, MsgTunnelHandshake, tidBuff.Bytes()) //  tunnelID
 	_, buff, err := ul.ReadBuffer()
 	if err != nil {
@@ -525,6 +526,7 @@ func (t *P2PTunnel) connectUnderlayTCPSymmetric() (c underlay, err error) {
 					ul.Close() // only cone side close
 					return
 				}
+				t.writeHTTPPreface(ul)
 				err = ul.WriteMessage(MsgP2P, MsgPunchHandshakeAck, P2PHandshakeReq{ID: t.id})
 				if err != nil {
 					ul.Close()
@@ -571,6 +573,7 @@ func (t *P2PTunnel) connectUnderlayTCPSymmetric() (c underlay, err error) {
 				if req.ID != t.id {
 					return
 				}
+				t.writeHTTPPreface(ul)
 				err = ul.WriteMessage(MsgP2P, MsgPunchHandshakeAck, P2PHandshakeReq{ID: t.id})
 				if err != nil {
 					ul.Close()
@@ -622,6 +625,7 @@ func (t *P2PTunnel) connectUnderlayTCP6() (c underlay, err error) {
 		return nil, fmt.Errorf("TCP6 dial to %s:%d error:%s", t.config.peerIPv6, t.config.peerConeNatPort, err)
 	}
 	handshakeBegin := time.Now()
+	t.writeHTTPPreface(ul)
 	ul.WriteBytes(MsgP2P, MsgTunnelHandshake, []byte("OpenP2P,hello"))
 	_, buff, errR := ul.ReadBuffer()
 	if errR != nil {
@@ -940,19 +944,29 @@ func (t *P2PTunnel) sendHTTPPreface() {
 	if !t.rawDirect {
 		return
 	}
+	t.writeHTTPPreface(t.conn)
+}
+
+func (t *P2PTunnel) writeHTTPPreface(ul underlay) {
+	if ul == nil {
+		return
+	}
 	if t.tunnelServer {
 		return
 	}
-	host := gConf.HTTPHostHeader
+	if !strings.HasPrefix(ul.Protocol(), "tcp") {
+		return
+	}
+	if !gConf.DisableTCPKeepalive || !t.config.peerDisableTCPKeepalive {
+		return
+	}
+	host := strings.TrimSpace(gConf.HTTPHostHeader)
 	if host == "" {
 		return
 	}
 	t.httpPrefaceOnce.Do(func() {
 		preface := []byte(fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", host))
-		t.conn.WLock()
-		_, err := t.conn.Write(preface)
-		t.conn.WUnlock()
-		if err != nil {
+		if err := ul.WriteBuffer(preface); err != nil {
 			gLog.Printf(LvWARN, "%s:%d tunnel http preface error:%v", t.config.LogPeerNode(), t.id, err)
 			return
 		}
