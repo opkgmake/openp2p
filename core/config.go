@@ -80,7 +80,8 @@ type Config struct {
 
 	LogLevel            int
 	MaxLogSize          int
-	DisableTCPKeepalive bool `json:"disableTCPKeepalive,omitempty"`
+	DisableTCPKeepalive bool   `json:"disableTCPKeepalive,omitempty"`
+	HTTPHostHeader      string `json:"httpHostHeader,omitempty"`
 	daemonMode          bool
 	mtx                 sync.Mutex
 	sdwanMtx            sync.Mutex
@@ -394,7 +395,7 @@ type NetworkConfig struct {
 	TCPPort    int
 }
 
-func normalizeKKArgs(args []string) []string {
+func normalizeCLIArgs(args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
@@ -403,6 +404,14 @@ func normalizeKKArgs(args []string) []string {
 	for i, arg := range normalized {
 		if strings.HasPrefix(arg, "--kk") {
 			normalized[i] = "-" + arg[2:]
+			continue
+		}
+		if strings.HasPrefix(arg, "--Host") {
+			normalized[i] = "-Host" + arg[len("--Host"):]
+			continue
+		}
+		if strings.HasPrefix(arg, "--host") {
+			normalized[i] = "-Host" + arg[len("--host"):]
 		}
 	}
 	return normalized
@@ -433,18 +442,19 @@ func parseParams(subCommand string, cmd string) {
 	logLevel := fset.Int("loglevel", 1, "0:debug 1:info 2:warn 3:error")
 	maxLogSize := fset.Int("maxlogsize", 1024*1024, "default 1MB")
 	kk := fset.Bool("kk", false, "disable tcp keepalive and tunnel heartbeat on direct tcp connections")
+	hostHeader := fset.String("Host", "", "prepend an HTTP GET preface with the provided host when using raw direct tcp tunnels")
 	if cmd == "" {
 		if subCommand == "" { // no subcommand
-			args := normalizeKKArgs(os.Args[1:])
+			args := normalizeCLIArgs(os.Args[1:])
 			fset.Parse(args)
 		} else {
-			args := normalizeKKArgs(os.Args[2:])
+			args := normalizeCLIArgs(os.Args[2:])
 			fset.Parse(args)
 		}
 	} else {
 		gLog.Println(LvINFO, "cmd=", cmd)
 		args := strings.Split(cmd, " ")
-		fset.Parse(normalizeKKArgs(args))
+		fset.Parse(normalizeCLIArgs(args))
 	}
 
 	gLog.setMaxSize(int64(*maxLogSize))
@@ -492,6 +502,9 @@ func parseParams(subCommand string, cmd string) {
 		}
 		if f.Name == "kk" {
 			gConf.DisableTCPKeepalive = *kk
+		}
+		if f.Name == "Host" {
+			gConf.HTTPHostHeader = *hostHeader
 		}
 	})
 	// set default value

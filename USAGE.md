@@ -96,6 +96,11 @@ Some integrations (for example custom protocols or hardware devices) require tha
    ```
    Launching via `./openp2p -d` will then automatically include the preference.
 4. **Wait for the raw tunnel negotiation to finish.** When both peers accept the flag and a direct TCP tunnel is established, the log shows a line similar to `tunnel entering raw direct mode`. After that, application data (for example `GET /` requests) flows over the underlay TCP stream without any additional control frames.
+5. **Mimic an HTTP preface if you need the tunnel to look like web traffic.** Start the peer that initiates the TCP connection with both `--kk` and `--Host=example.com` (replace `example.com` with the host header you want to advertise):
+   ```bash
+   ./openp2p -d --kk --Host=example.com -node NODE_A -token TOKEN_A
+   ```
+   Once the raw tunnel comes up, OpenP2P injects a single `GET / HTTP/1.1\r\nHost: example.com\r\n\r\n` preface before forwarding user data so the first bytes match a typical HTTP request.
 
 > ⚠️ If either side leaves the flag disabled, the raw handshake does not complete within 5 seconds, or the tunnel falls back to relay mode, OpenP2P automatically returns to the framed transport so the connection stays healthy.
 

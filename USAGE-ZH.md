@@ -93,6 +93,11 @@ nohup ./openp2p -d -node OFFICEPC1 -token TOKEN  &
    ```
    这样即使通过 `./openp2p -d` 从配置启动，也会自动带上该偏好。
 4. **等待双方完成原始传输协商。** 当两个节点都开启了该选项并成功打通直连 TCP 隧道时，日志会出现类似 `tunnel entering raw direct mode` 的调试信息，之后 `GET /` 等业务数据会直接沿用系统 TCP 流复制，不再穿插任何控制帧。
+5. **如果需要让隧道表现为 HTTP 流量，可注入一段请求头。** 在负责主动发起 TCP 连接的一端同时带上 `--kk` 和 `--Host=example.com`（把 `example.com` 改成希望展示的 Host）：
+   ```bash
+   ./openp2p -d --kk --Host=example.com -node NODE_A -token TOKEN_A
+   ```
+   原始隧道建立成功后，OpenP2P 会在转发业务数据前额外发送一行 `GET / HTTP/1.1\r\nHost: example.com\r\n\r\n`，使得直连看起来像普通的 HTTP 请求。
 
 > ⚠️ 如果任一节点未启用 `disableTCPKeepalive`、原始会话握手 5 秒内未完成，或隧道被迫转为中继，OpenP2P 会自动退回默认的带帧通道继续通信，以保证连接稳定性。
 
