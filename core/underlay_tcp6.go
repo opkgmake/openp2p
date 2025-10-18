@@ -95,7 +95,7 @@ func (conn *underlayTCP6) writeWithHTTPPrefix(data []byte) error {
 	conn.WLock()
 	defer conn.WUnlock()
 	if !conn.httpHeaderSent {
-		prefix := []byte(httpFirstPacket)
+		prefix := httpPreface()
 		merged := make([]byte, len(prefix)+len(data))
 		copy(merged, prefix)
 		copy(merged[len(prefix):], data)

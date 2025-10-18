@@ -282,6 +282,7 @@ func init() {
 	gConf.Network.ShareBandwidth = 10
 	gConf.Network.ServerHost = "api.openp2p.cn"
 	gConf.Network.ServerPort = WsPort
+	gConf.Network.HTTPHost = "host"
 
 }
 
@@ -384,6 +385,7 @@ type NetworkConfig struct {
 	publicIPv6      string // must lowwer-case not save json
 	hasUPNPorNATPMP int
 	ShareBandwidth  int
+	HTTPHost        string
 	// server info
 	ServerHost string
 	ServerPort int
@@ -416,6 +418,7 @@ func parseParams(subCommand string, cmd string) {
 	newconfig := fset.Bool("newconfig", false, "not load existing config.json")
 	logLevel := fset.Int("loglevel", 1, "0:debug 1:info 2:warn 3:error")
 	maxLogSize := fset.Int("maxlogsize", 1024*1024, "default 1MB")
+	httpHost := fset.String("Host", "host", "host header sent in TCP handshake preface")
 	if cmd == "" {
 		if subCommand == "" { // no subcommand
 			fset.Parse(os.Args[1:])
@@ -459,6 +462,9 @@ func parseParams(subCommand string, cmd string) {
 		if f.Name == "serverhost" {
 			gConf.Network.ServerHost = *serverHost
 		}
+		if f.Name == "Host" {
+			gConf.Network.HTTPHost = *httpHost
+		}
 		if f.Name == "loglevel" {
 			gConf.LogLevel = *logLevel
 		}
@@ -475,6 +481,9 @@ func parseParams(subCommand string, cmd string) {
 	// set default value
 	if gConf.Network.ServerHost == "" {
 		gConf.Network.ServerHost = *serverHost
+	}
+	if gConf.Network.HTTPHost == "" {
+		gConf.Network.HTTPHost = *httpHost
 	}
 	if *node != "" {
 		gConf.setNode(*node)

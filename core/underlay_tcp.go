@@ -21,7 +21,13 @@ type underlayTCP struct {
 	httpHeaderSkipped bool
 }
 
-const httpFirstPacket = "GET / HTTP/1.1\r\nHost: host\r\n\r\n"
+func httpPreface() []byte {
+	host := gConf.Network.HTTPHost
+	if host == "" {
+		host = "host"
+	}
+	return []byte(fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", host))
+}
 
 func (conn *underlayTCP) Protocol() string {
 	return "tcp"
@@ -101,7 +107,7 @@ func (conn *underlayTCP) writeWithHTTPPrefix(data []byte) error {
 	conn.WLock()
 	defer conn.WUnlock()
 	if !conn.httpHeaderSent {
-		prefix := []byte(httpFirstPacket)
+		prefix := httpPreface()
 		merged := make([]byte, len(prefix)+len(data))
 		copy(merged, prefix)
 		copy(merged[len(prefix):], data)
