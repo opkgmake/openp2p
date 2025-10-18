@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -142,19 +141,7 @@ func (oConn *overlayConn) runRaw() {
 	}
 	defer oConn.tunnel.endRawSession()
 	if oConn.isClient {
-		if host := gConf.HTTPHostHeader; host != "" {
-			if conn := oConn.tunnel.conn; conn != nil {
-				preface := []byte(fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", host))
-				conn.WLock()
-				_, err := conn.Write(preface)
-				conn.WUnlock()
-				if err != nil {
-					gLog.Printf(LvWARN, "%d overlayConn raw http preface error:%v", oConn.id, err)
-				} else {
-					gLog.Printf(LvDEBUG, "%d overlayConn sent http preface host=%s", oConn.id, host)
-				}
-			}
-		}
+		oConn.tunnel.sendHTTPPreface()
 	}
 	done := make(chan struct{}, 2)
 	var closeOnce sync.Once

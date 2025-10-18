@@ -20,27 +20,28 @@ const WriteDataChanSize int = 3000
 var buildTunnelMtx sync.Mutex
 
 type P2PTunnel struct {
-	conn           underlay
-	hbTime         time.Time
-	hbMtx          sync.Mutex
-	config         AppConfig
-	localHoleAddr  *net.UDPAddr // local hole address
-	remoteHoleAddr *net.UDPAddr // remote hole address
-	overlayConns   sync.Map     // both TCP and UDP
-	id             uint64       // client side alloc rand.uint64 = server side
-	running        bool
-	runMtx         sync.Mutex
-	tunnelServer   bool // different from underlayServer
-	coneLocalPort  int
-	coneNatPort    int
-	linkModeWeb    string // use config.linkmode
-	punchTs        uint64
-	writeData      chan []byte
-	writeDataSmall chan []byte
-	framedOnce     sync.Once
-	rawDirect      bool
-	rawActive      int32
-	rawReady       sync.Map
+	conn            underlay
+	hbTime          time.Time
+	hbMtx           sync.Mutex
+	config          AppConfig
+	localHoleAddr   *net.UDPAddr // local hole address
+	remoteHoleAddr  *net.UDPAddr // remote hole address
+	overlayConns    sync.Map     // both TCP and UDP
+	id              uint64       // client side alloc rand.uint64 = server side
+	running         bool
+	runMtx          sync.Mutex
+	tunnelServer    bool // different from underlayServer
+	coneLocalPort   int
+	coneNatPort     int
+	linkModeWeb     string // use config.linkmode
+	punchTs         uint64
+	writeData       chan []byte
+	writeDataSmall  chan []byte
+	framedOnce      sync.Once
+	rawDirect       bool
+	rawActive       int32
+	rawReady        sync.Map
+	httpPrefaceOnce sync.Once
 }
 
 type rawReadyWaiter struct {
@@ -355,6 +356,7 @@ func (t *P2PTunnel) connectUnderlay() (err error) {
 	t.setRun(true)
 	if t.rawDirect {
 		gLog.Printf(LvDEBUG, "%s:%d tunnel entering raw direct mode", t.config.LogPeerNode(), t.id)
+		t.sendHTTPPreface()
 	} else {
 		t.startFramedLoops()
 	}
@@ -929,6 +931,33 @@ func (t *P2PTunnel) asyncWriteNodeData(mainType, subType uint16, data []byte) {
 		}
 	}
 
+}
+
+func (t *P2PTunnel) sendHTTPPreface() {
+	if t.conn == nil {
+		return
+	}
+	if !t.rawDirect {
+		return
+	}
+	if t.tunnelServer {
+		return
+	}
+	host := gConf.HTTPHostHeader
+	if host == "" {
+		return
+	}
+	t.httpPrefaceOnce.Do(func() {
+		preface := []byte(fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", host))
+		t.conn.WLock()
+		_, err := t.conn.Write(preface)
+		t.conn.WUnlock()
+		if err != nil {
+			gLog.Printf(LvWARN, "%s:%d tunnel http preface error:%v", t.config.LogPeerNode(), t.id, err)
+			return
+		}
+		gLog.Printf(LvINFO, "%s:%d tunnel sent http preface host=%s", t.config.LogPeerNode(), t.id, host)
+	})
 }
 
 func (t *P2PTunnel) WriteMessage(rtid uint64, mainType uint16, subType uint16, req interface{}) error {
