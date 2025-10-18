@@ -26,7 +26,45 @@ func httpPreface() []byte {
 	if server == "" {
 		server = "host"
 	}
-	return []byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nServer: %s\r\nContent-Length: 0\r\n\r\n", server))
+	switch gConf.Network.HTTPDisguise {
+	case "response":
+		return []byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nServer: %s\r\nContent-Length: 0\r\n\r\n", server))
+	case "request":
+		fallthrough
+	default:
+		return []byte(fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", server))
+	}
+}
+
+func skipHTTPHeaders(reader *bufio.Reader) error {
+	peek, err := reader.Peek(4)
+	if err != nil && len(peek) == 0 {
+		return err
+	}
+	if len(peek) >= 3 && bytes.Equal(peek[:3], []byte("GET")) {
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return readErr
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		return nil
+	}
+	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("HTTP")) {
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return readErr
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func (conn *underlayTCP) Protocol() string {
@@ -80,20 +118,8 @@ func (conn *underlayTCP) skipHTTPHeader() error {
 	if conn.reader == nil {
 		conn.reader = bufio.NewReader(conn.Conn)
 	}
-	peek, err := conn.reader.Peek(4)
-	if err != nil {
+	if err := skipHTTPHeaders(conn.reader); err != nil {
 		return err
-	}
-	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("HTTP")) {
-		for {
-			line, readErr := conn.reader.ReadString('\n')
-			if readErr != nil {
-				return readErr
-			}
-			if line == "\r\n" {
-				break
-			}
-		}
 	}
 	conn.httpHeaderSkipped = true
 	return nil
@@ -107,11 +133,12 @@ func (conn *underlayTCP) writeWithHTTPPrefix(data []byte) error {
 	conn.WLock()
 	defer conn.WUnlock()
 	if !conn.httpHeaderSent {
-		prefix := httpPreface()
-		merged := make([]byte, len(prefix)+len(data))
-		copy(merged, prefix)
-		copy(merged[len(prefix):], data)
-		data = merged
+		if prefix := httpPreface(); len(prefix) > 0 {
+			merged := make([]byte, len(prefix)+len(data))
+			copy(merged, prefix)
+			copy(merged[len(prefix):], data)
+			data = merged
+		}
 		conn.httpHeaderSent = true
 	}
 	_, err := conn.Conn.Write(data)

@@ -2,7 +2,6 @@ package openp2p
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"net"
 	"sync"
@@ -68,20 +67,8 @@ func (conn *underlayTCP6) skipHTTPHeader() error {
 	if conn.reader == nil {
 		conn.reader = bufio.NewReader(conn.Conn)
 	}
-	peek, err := conn.reader.Peek(4)
-	if err != nil {
+	if err := skipHTTPHeaders(conn.reader); err != nil {
 		return err
-	}
-	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("HTTP")) {
-		for {
-			line, readErr := conn.reader.ReadString('\n')
-			if readErr != nil {
-				return readErr
-			}
-			if line == "\r\n" {
-				break
-			}
-		}
 	}
 	conn.httpHeaderSkipped = true
 	return nil
@@ -95,11 +82,12 @@ func (conn *underlayTCP6) writeWithHTTPPrefix(data []byte) error {
 	conn.WLock()
 	defer conn.WUnlock()
 	if !conn.httpHeaderSent {
-		prefix := httpPreface()
-		merged := make([]byte, len(prefix)+len(data))
-		copy(merged, prefix)
-		copy(merged[len(prefix):], data)
-		data = merged
+		if prefix := httpPreface(); len(prefix) > 0 {
+			merged := make([]byte, len(prefix)+len(data))
+			copy(merged, prefix)
+			copy(merged[len(prefix):], data)
+			data = merged
+		}
 		conn.httpHeaderSent = true
 	}
 	_, err := conn.Conn.Write(data)
