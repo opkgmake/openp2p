@@ -651,61 +651,14 @@ func (t *P2PTunnel) readLoop() {
 				gLog.Printf(LvERROR, "wrong %v:%s", reflect.TypeOf(req), err)
 				continue
 			}
-			// app connect only accept token(not relay totp token), avoid someone using the share relay node's token
-			if req.Token != gConf.Network.Token {
-				gLog.Println(LvERROR, "Access Denied:", req.Token)
-				continue
-			}
-
-			overlayID := req.ID
-			gLog.Printf(LvDEBUG, "App:%d overlayID:%d connect %s:%d", req.AppID, overlayID, req.DstIP, req.DstPort)
-			appKey := GetKey(req.AppID)
-			if req.RelayTunnelID == 0 && req.Protocol == "tcp" {
-				appKey = 0
-			}
-			oConn := overlayConn{
-				tunnel:   t,
-				id:       overlayID,
-				isClient: false,
-				rtid:     req.RelayTunnelID,
-				appID:    req.AppID,
-				appKey:   appKey,
-				running:  true,
-			}
-			if req.Protocol == "udp" {
-				oConn.connUDP, err = net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP(req.DstIP), Port: req.DstPort})
-			} else {
-				oConn.connTCP, err = net.DialTimeout("tcp", fmt.Sprintf("%s:%d", req.DstIP, req.DstPort), ReadMsgTimeout)
-
-			}
-			if err != nil {
-				gLog.Println(LvERROR, err)
-				continue
-			}
-
-			// calc key bytes for encrypt
-			if oConn.appKey != 0 {
-				encryptKey := make([]byte, AESKeySize)
-				binary.LittleEndian.PutUint64(encryptKey, oConn.appKey)
-				binary.LittleEndian.PutUint64(encryptKey[8:], oConn.appKey)
-				oConn.appKeyBytes = encryptKey
-			}
-
-			t.overlayConns.Store(oConn.id, &oConn)
-			go oConn.run()
+			t.processOverlayConnectReq(&req)
 		case MsgOverlayDisconnectReq:
 			req := OverlayDisconnectReq{}
 			if err := json.Unmarshal(body, &req); err != nil {
 				gLog.Printf(LvERROR, "wrong %v:%s", reflect.TypeOf(req), err)
 				continue
 			}
-			overlayID := req.ID
-			gLog.Printf(LvDEBUG, "%d disconnect overlay connection %d", t.id, overlayID)
-			i, ok := t.overlayConns.Load(overlayID)
-			if ok {
-				oConn := i.(*overlayConn)
-				oConn.Close()
-			}
+			t.processOverlayDisconnectReq(&req)
 		default:
 		}
 	}
@@ -793,6 +746,61 @@ func (t *P2PTunnel) closeOverlayConns(appID uint64) {
 	})
 }
 
+func (t *P2PTunnel) processOverlayConnectReq(req *OverlayConnectReq) {
+	// app connect only accept token(not relay totp token), avoid someone using the share relay node's token
+	if req.Token != gConf.Network.Token {
+		gLog.Println(LvERROR, "Access Denied:", req.Token)
+		return
+	}
+
+	overlayID := req.ID
+	gLog.Printf(LvDEBUG, "App:%d overlayID:%d connect %s:%d", req.AppID, overlayID, req.DstIP, req.DstPort)
+	appKey := GetKey(req.AppID)
+	if req.RelayTunnelID == 0 && req.Protocol == "tcp" {
+		appKey = 0
+	}
+	oConn := overlayConn{
+		tunnel:   t,
+		id:       overlayID,
+		isClient: false,
+		rtid:     req.RelayTunnelID,
+		appID:    req.AppID,
+		appKey:   appKey,
+		running:  true,
+	}
+	var err error
+	if req.Protocol == "udp" {
+		oConn.connUDP, err = net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP(req.DstIP), Port: req.DstPort})
+	} else {
+		oConn.connTCP, err = net.DialTimeout("tcp", fmt.Sprintf("%s:%d", req.DstIP, req.DstPort), ReadMsgTimeout)
+	}
+	if err != nil {
+		gLog.Println(LvERROR, err)
+		return
+	}
+
+	// calc key bytes for encrypt
+	if oConn.appKey != 0 {
+		encryptKey := make([]byte, AESKeySize)
+		binary.LittleEndian.PutUint64(encryptKey, oConn.appKey)
+		binary.LittleEndian.PutUint64(encryptKey[8:], oConn.appKey)
+		oConn.appKeyBytes = encryptKey
+	}
+
+	t.overlayConns.Store(oConn.id, &oConn)
+	go oConn.run()
+}
+
+func (t *P2PTunnel) processOverlayDisconnectReq(req *OverlayDisconnectReq) {
+	overlayID := req.ID
+	gLog.Printf(LvDEBUG, "%d disconnect overlay connection %d", t.id, overlayID)
+	i, ok := t.overlayConns.Load(overlayID)
+	if ok {
+		oConn := i.(*overlayConn)
+		oConn.Close()
+	}
+}
+
 func (t *P2PTunnel) handleNodeData(head *openP2PHeader, body []byte, isRelay bool) {
 	gLog.Printf(LvDev, "%d tunnel read node data bodylen=%d, relay=%t", t.id, head.DataLen, isRelay)
 	ch := GNetwork.nodeData
@@ -838,4 +846,18 @@ func (t *P2PTunnel) WriteMessage(rtid uint64, mainType uint16, subType uint16, r
 	msgWithHead := append(relayHead.Bytes(), msg...)
 	return t.conn.WriteBytes(mainType, MsgRelayData, msgWithHead)
 
+}
+
+func (t *P2PTunnel) sendOverlayConnect(rtid uint64, req *OverlayConnectReq) error {
+	if t.disableTCPHeartbeat() {
+		return GNetwork.push(t.config.PeerNode, MsgPushOverlayConnectReq, req)
+	}
+	return t.WriteMessage(rtid, MsgP2P, MsgOverlayConnectReq, req)
+}
+
+func (t *P2PTunnel) sendOverlayDisconnect(rtid uint64, req *OverlayDisconnectReq) error {
+	if t.disableTCPHeartbeat() {
+		return GNetwork.push(t.config.PeerNode, MsgPushOverlayDisconnectReq, req)
+	}
+	return t.WriteMessage(rtid, MsgP2P, MsgOverlayDisconnectReq, req)
 }

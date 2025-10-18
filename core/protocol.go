@@ -109,6 +109,8 @@ const (
 	MsgPushReportMemApps        = 17
 	MsgPushServerSideSaveMemApp = 18
 	MsgPushCheckRemoteService   = 19
+	MsgPushOverlayConnectReq    = 20
+	MsgPushOverlayDisconnectReq = 21
 )
 
 // MsgP2P sub type message
@@ -322,7 +324,8 @@ type OverlayConnectReq struct {
 	AppID         uint64 `json:"appID,omitempty"`
 }
 type OverlayDisconnectReq struct {
-	ID uint64 `json:"id,omitempty"`
+	ID    uint64 `json:"id,omitempty"`
+	AppID uint64 `json:"appID,omitempty"`
 }
 type TunnelMsg struct {
 	ID uint64 `json:"id,omitempty"`

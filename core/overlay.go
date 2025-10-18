@@ -86,8 +86,10 @@ func (oConn *overlayConn) run() {
 	}
 	oConn.tunnel.overlayConns.Delete(oConn.id)
 	// notify peer disconnect
-	req := OverlayDisconnectReq{ID: oConn.id}
-	oConn.tunnel.WriteMessage(oConn.rtid, MsgP2P, MsgOverlayDisconnectReq, &req)
+	req := OverlayDisconnectReq{ID: oConn.id, AppID: oConn.appID}
+	if err := oConn.tunnel.sendOverlayDisconnect(oConn.rtid, &req); err != nil {
+		gLog.Printf(LvERROR, "overlayConn %d send disconnect error:%s", oConn.id, err)
+	}
 }
 
 func (oConn *overlayConn) Read(reuseBuff []byte) (buff []byte, dataLen int, err error) {

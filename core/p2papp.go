@@ -452,7 +452,9 @@ func (app *p2pApp) listenTCP() error {
 		if !app.isDirect() {
 			req.RelayTunnelID = app.Tunnel().id
 		}
-		app.Tunnel().WriteMessage(app.RelayTunnelID(), MsgP2P, MsgOverlayConnectReq, &req)
+		if err := app.Tunnel().sendOverlayConnect(app.RelayTunnelID(), &req); err != nil {
+			gLog.Printf(LvERROR, "%s appid:%d send overlay connect error:%s", app.config.LogPeerNode(), app.id, err)
+		}
 		// TODO: wait OverlayConnectRsp instead of sleep
 		time.Sleep(time.Second) // waiting remote node connection ok
 		go oConn.run()
@@ -537,7 +539,9 @@ func (app *p2pApp) listenUDP() error {
 				if !app.isDirect() {
 					req.RelayTunnelID = app.Tunnel().id
 				}
-				app.Tunnel().WriteMessage(app.RelayTunnelID(), MsgP2P, MsgOverlayConnectReq, &req)
+				if err := app.Tunnel().sendOverlayConnect(app.RelayTunnelID(), &req); err != nil {
+					gLog.Printf(LvERROR, "%s appid:%d send overlay connect error:%s", app.config.LogPeerNode(), app.id, err)
+				}
 				// TODO: wait OverlayConnectRsp instead of sleep
 				time.Sleep(time.Second) // waiting remote node connection ok
 				go oConn.run()

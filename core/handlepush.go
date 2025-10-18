@@ -142,6 +142,40 @@ func handlePush(subType uint16, msg []byte) error {
 		err = handleReportMemApps()
 	case MsgPushReportLog:
 		err = handleLog(msg)
+	case MsgPushOverlayConnectReq:
+		req := OverlayConnectReq{}
+		if err = json.Unmarshal(msg[openP2PHeaderSize+PushHeaderSize:], &req); err != nil {
+			gLog.Printf(LvERROR, "wrong %v:%s", reflect.TypeOf(req), err)
+			return err
+		}
+		app := GNetwork.findAppByID(req.AppID)
+		if app == nil {
+			gLog.Printf(LvERROR, "overlay connect push app %d not found", req.AppID)
+			return nil
+		}
+		tunnel := app.DirectTunnel()
+		if tunnel == nil {
+			gLog.Printf(LvERROR, "overlay connect push app %d has no direct tunnel", req.AppID)
+			return nil
+		}
+		tunnel.processOverlayConnectReq(&req)
+	case MsgPushOverlayDisconnectReq:
+		req := OverlayDisconnectReq{}
+		if err = json.Unmarshal(msg[openP2PHeaderSize+PushHeaderSize:], &req); err != nil {
+			gLog.Printf(LvERROR, "wrong %v:%s", reflect.TypeOf(req), err)
+			return err
+		}
+		app := GNetwork.findAppByID(req.AppID)
+		if app == nil {
+			gLog.Printf(LvERROR, "overlay disconnect push app %d not found", req.AppID)
+			return nil
+		}
+		tunnel := app.DirectTunnel()
+		if tunnel == nil {
+			gLog.Printf(LvERROR, "overlay disconnect push app %d has no direct tunnel", req.AppID)
+			return nil
+		}
+		tunnel.processOverlayDisconnectReq(&req)
 	case MsgPushReportGoroutine:
 		err = handleReportGoroutine()
 	case MsgPushCheckRemoteService:

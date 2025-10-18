@@ -821,6 +821,19 @@ func (pn *P2PNetwork) updateAppHeartbeat(appID uint64) {
 	})
 }
 
+func (pn *P2PNetwork) findAppByID(appID uint64) *p2pApp {
+	var target *p2pApp
+	pn.apps.Range(func(_, value interface{}) bool {
+		app := value.(*p2pApp)
+		if app.id == appID {
+			target = app
+			return false
+		}
+		return true
+	})
+	return target
+}
+
 // ipv6 will expired need to refresh.
 func (pn *P2PNetwork) refreshIPv6() {
 	for i := 0; i < 2; i++ {
