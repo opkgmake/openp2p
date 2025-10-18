@@ -37,6 +37,8 @@ type P2PTunnel struct {
 	punchTs        uint64
 	writeData      chan []byte
 	writeDataSmall chan []byte
+	rawDirect      bool
+	rawActive      int32
 }
 
 func (t *P2PTunnel) initPort() {
@@ -67,20 +69,21 @@ func (t *P2PTunnel) connect() error {
 	t.tunnelServer = false
 	appKey := uint64(0)
 	req := PushConnectReq{
-		Token:            t.config.peerToken,
-		From:             gConf.Network.Node,
-		FromIP:           gConf.Network.publicIP,
-		ConeNatPort:      t.coneNatPort,
-		NatType:          gConf.Network.natType,
-		HasIPv4:          gConf.Network.hasIPv4,
-		IPv6:             gConf.IPv6(),
-		HasUPNPorNATPMP:  gConf.Network.hasUPNPorNATPMP,
-		ID:               t.id,
-		AppKey:           appKey,
-		Version:          OpenP2PVersion,
-		LinkMode:         t.config.linkMode,
-		IsUnderlayServer: t.config.isUnderlayServer ^ 1, // peer
-		UnderlayProtocol: t.config.UnderlayProtocol,
+		Token:               t.config.peerToken,
+		From:                gConf.Network.Node,
+		FromIP:              gConf.Network.publicIP,
+		ConeNatPort:         t.coneNatPort,
+		NatType:             gConf.Network.natType,
+		HasIPv4:             gConf.Network.hasIPv4,
+		IPv6:                gConf.IPv6(),
+		HasUPNPorNATPMP:     gConf.Network.hasUPNPorNATPMP,
+		ID:                  t.id,
+		AppKey:              appKey,
+		Version:             OpenP2PVersion,
+		LinkMode:            t.config.linkMode,
+		IsUnderlayServer:    t.config.isUnderlayServer ^ 1, // peer
+		UnderlayProtocol:    t.config.UnderlayProtocol,
+		DisableTCPKeepalive: gConf.DisableTCPKeepalive,
 	}
 	if req.Token == 0 { // no relay token
 		req.Token = gConf.Network.Token
@@ -106,6 +109,7 @@ func (t *P2PTunnel) connect() error {
 	t.config.peerVersion = rsp.Version
 	t.config.peerConeNatPort = rsp.ConeNatPort
 	t.config.peerIP = rsp.FromIP
+	t.config.peerDisableTCPKeepalive = rsp.DisableTCPKeepalive
 	t.punchTs = rsp.PunchTs
 	err := t.start()
 	if err != nil {
@@ -127,13 +131,32 @@ func (t *P2PTunnel) setRun(running bool) {
 }
 
 func (t *P2PTunnel) disableTCPHeartbeat() bool {
-	if !gConf.DisableTCPKeepalive {
+	if !gConf.DisableTCPKeepalive || !t.config.peerDisableTCPKeepalive {
 		return false
 	}
 	if t.conn == nil {
 		return false
 	}
 	return strings.HasPrefix(t.conn.Protocol(), "tcp")
+}
+
+func (t *P2PTunnel) shouldUseRawDirect() bool {
+	if t.conn == nil {
+		return false
+	}
+	return t.disableTCPHeartbeat()
+}
+
+func (t *P2PTunnel) useRawDirect() bool {
+	return t.rawDirect
+}
+
+func (t *P2PTunnel) beginRawSession() bool {
+	return atomic.CompareAndSwapInt32(&t.rawActive, 0, 1)
+}
+
+func (t *P2PTunnel) endRawSession() {
+	atomic.StoreInt32(&t.rawActive, 0)
 }
 
 func (t *P2PTunnel) isActive() bool {
@@ -267,9 +290,14 @@ func (t *P2PTunnel) connectUnderlay() (err error) {
 	if t.conn == nil {
 		return errors.New("connect underlay error")
 	}
+	t.rawDirect = t.shouldUseRawDirect()
 	t.setRun(true)
-	go t.readLoop()
-	go t.writeLoop()
+	if t.rawDirect {
+		gLog.Printf(LvDEBUG, "%s:%d tunnel entering raw direct mode", t.config.LogPeerNode(), t.id)
+	} else {
+		go t.readLoop()
+		go t.writeLoop()
+	}
 	return nil
 }
 
@@ -717,12 +745,13 @@ func (t *P2PTunnel) listen() error {
 		NatType: gConf.Network.natType,
 		HasIPv4: gConf.Network.hasIPv4,
 		// IPv6:            gConf.Network.IPv6,
-		HasUPNPorNATPMP: gConf.Network.hasUPNPorNATPMP,
-		FromIP:          gConf.Network.publicIP,
-		ConeNatPort:     t.coneNatPort,
-		ID:              t.id,
-		PunchTs:         uint64(time.Now().UnixNano() + int64(PunchTsDelay) - GNetwork.dt),
-		Version:         OpenP2PVersion,
+		HasUPNPorNATPMP:     gConf.Network.hasUPNPorNATPMP,
+		FromIP:              gConf.Network.publicIP,
+		ConeNatPort:         t.coneNatPort,
+		ID:                  t.id,
+		PunchTs:             uint64(time.Now().UnixNano() + int64(PunchTsDelay) - GNetwork.dt),
+		Version:             OpenP2PVersion,
+		DisableTCPKeepalive: gConf.DisableTCPKeepalive,
 	}
 	t.punchTs = rsp.PunchTs
 	// only private node set ipv6

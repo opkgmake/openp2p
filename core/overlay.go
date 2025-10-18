@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -41,6 +43,14 @@ type overlayConn struct {
 }
 
 func (oConn *overlayConn) run() {
+	if oConn.tunnel.useRawDirect() && oConn.connTCP != nil && oConn.rtid == 0 {
+		oConn.runRaw()
+		return
+	}
+	oConn.runFramed()
+}
+
+func (oConn *overlayConn) runFramed() {
 	gLog.Printf(LvDEBUG, "%d overlayConn run start", oConn.id)
 	defer gLog.Printf(LvDEBUG, "%d overlayConn run end", oConn.id)
 	oConn.lastReadUDPTs = time.Now()
@@ -90,6 +100,63 @@ func (oConn *overlayConn) run() {
 	if err := oConn.tunnel.sendOverlayDisconnect(oConn.rtid, &req); err != nil {
 		gLog.Printf(LvERROR, "overlayConn %d send disconnect error:%s", oConn.id, err)
 	}
+}
+
+func (oConn *overlayConn) runRaw() {
+	gLog.Printf(LvDEBUG, "%d overlayConn raw run start", oConn.id)
+	defer gLog.Printf(LvDEBUG, "%d overlayConn raw run end", oConn.id)
+	if oConn.connTCP == nil {
+		gLog.Printf(LvERROR, "%d overlayConn raw mode requires tcp connection", oConn.id)
+		return
+	}
+	if !oConn.tunnel.beginRawSession() {
+		gLog.Printf(LvERROR, "%d overlayConn raw session already active", oConn.id)
+		oConn.tunnel.overlayConns.Delete(oConn.id)
+		req := OverlayDisconnectReq{ID: oConn.id, AppID: oConn.appID}
+		if err := oConn.tunnel.sendOverlayDisconnect(oConn.rtid, &req); err != nil {
+			gLog.Printf(LvERROR, "overlayConn %d send disconnect error:%s", oConn.id, err)
+		}
+		oConn.Close()
+		return
+	}
+	defer oConn.tunnel.endRawSession()
+	done := make(chan struct{}, 2)
+	var closeOnce sync.Once
+	closeAll := func() {
+		closeOnce.Do(func() {
+			if oConn.connTCP != nil {
+				oConn.connTCP.Close()
+			}
+			if oConn.tunnel.conn != nil {
+				oConn.tunnel.conn.Close()
+			}
+		})
+	}
+	go func() {
+		if oConn.tunnel.conn != nil {
+			if _, err := io.Copy(oConn.tunnel.conn, oConn.connTCP); err != nil && !errors.Is(err, io.EOF) {
+				gLog.Printf(LvDEBUG, "%d overlayConn raw upstream error:%s", oConn.id, err)
+			}
+		}
+		done <- struct{}{}
+	}()
+	go func() {
+		if oConn.tunnel.conn != nil {
+			if _, err := io.Copy(oConn.connTCP, oConn.tunnel.conn); err != nil && !errors.Is(err, io.EOF) {
+				gLog.Printf(LvDEBUG, "%d overlayConn raw downstream error:%s", oConn.id, err)
+			}
+		}
+		done <- struct{}{}
+	}()
+	<-done
+	closeAll()
+	<-done
+	oConn.tunnel.overlayConns.Delete(oConn.id)
+	req := OverlayDisconnectReq{ID: oConn.id, AppID: oConn.appID}
+	if err := oConn.tunnel.sendOverlayDisconnect(oConn.rtid, &req); err != nil {
+		gLog.Printf(LvERROR, "overlayConn %d send disconnect error:%s", oConn.id, err)
+	}
+	oConn.tunnel.close()
 }
 
 func (oConn *overlayConn) Read(reuseBuff []byte) (buff []byte, dataLen int, err error) {

@@ -250,39 +250,41 @@ func NodeNameToID(name string) uint64 {
 }
 
 type PushConnectReq struct {
-	From             string `json:"from,omitempty"`
-	FromToken        uint64 `json:"fromToken,omitempty"` // deprecated
-	Version          string `json:"version,omitempty"`
-	Token            uint64 `json:"token,omitempty"`       // if public totp token
-	ConeNatPort      int    `json:"coneNatPort,omitempty"` // if isPublic, is public port
-	NatType          int    `json:"natType,omitempty"`
-	HasIPv4          int    `json:"hasIPv4,omitempty"`
-	IPv6             string `json:"IPv6,omitempty"`
-	HasUPNPorNATPMP  int    `json:"hasUPNPorNATPMP,omitempty"`
-	FromIP           string `json:"fromIP,omitempty"`
-	ID               uint64 `json:"id,omitempty"`
-	AppKey           uint64 `json:"appKey,omitempty"` // for underlay tcp
-	LinkMode         string `json:"linkMode,omitempty"`
-	IsUnderlayServer int    `json:"isServer,omitempty"`         // Requset spec peer is server
-	UnderlayProtocol string `json:"underlayProtocol,omitempty"` // quic or kcp, default quic
+	From                string `json:"from,omitempty"`
+	FromToken           uint64 `json:"fromToken,omitempty"` // deprecated
+	Version             string `json:"version,omitempty"`
+	Token               uint64 `json:"token,omitempty"`       // if public totp token
+	ConeNatPort         int    `json:"coneNatPort,omitempty"` // if isPublic, is public port
+	NatType             int    `json:"natType,omitempty"`
+	HasIPv4             int    `json:"hasIPv4,omitempty"`
+	IPv6                string `json:"IPv6,omitempty"`
+	HasUPNPorNATPMP     int    `json:"hasUPNPorNATPMP,omitempty"`
+	FromIP              string `json:"fromIP,omitempty"`
+	ID                  uint64 `json:"id,omitempty"`
+	AppKey              uint64 `json:"appKey,omitempty"` // for underlay tcp
+	LinkMode            string `json:"linkMode,omitempty"`
+	IsUnderlayServer    int    `json:"isServer,omitempty"`         // Requset spec peer is server
+	UnderlayProtocol    string `json:"underlayProtocol,omitempty"` // quic or kcp, default quic
+	DisableTCPKeepalive bool   `json:"disableTCPKeepalive,omitempty"`
 }
 type PushDstNodeOnline struct {
 	Node string `json:"node,omitempty"`
 }
 type PushConnectRsp struct {
-	Error           int    `json:"error,omitempty"`
-	From            string `json:"from,omitempty"`
-	To              string `json:"to,omitempty"`
-	Detail          string `json:"detail,omitempty"`
-	NatType         int    `json:"natType,omitempty"`
-	HasIPv4         int    `json:"hasIPv4,omitempty"`
-	IPv6            string `json:"IPv6,omitempty"` // if public relay node, ipv6 not set
-	HasUPNPorNATPMP int    `json:"hasUPNPorNATPMP,omitempty"`
-	ConeNatPort     int    `json:"coneNatPort,omitempty"` //it's not only cone, but also upnp or nat-pmp hole
-	FromIP          string `json:"fromIP,omitempty"`
-	ID              uint64 `json:"id,omitempty"`
-	PunchTs         uint64 `json:"punchts,omitempty"` // server timestamp
-	Version         string `json:"version,omitempty"`
+	Error               int    `json:"error,omitempty"`
+	From                string `json:"from,omitempty"`
+	To                  string `json:"to,omitempty"`
+	Detail              string `json:"detail,omitempty"`
+	NatType             int    `json:"natType,omitempty"`
+	HasIPv4             int    `json:"hasIPv4,omitempty"`
+	IPv6                string `json:"IPv6,omitempty"` // if public relay node, ipv6 not set
+	HasUPNPorNATPMP     int    `json:"hasUPNPorNATPMP,omitempty"`
+	ConeNatPort         int    `json:"coneNatPort,omitempty"` //it's not only cone, but also upnp or nat-pmp hole
+	FromIP              string `json:"fromIP,omitempty"`
+	ID                  uint64 `json:"id,omitempty"`
+	PunchTs             uint64 `json:"punchts,omitempty"` // server timestamp
+	Version             string `json:"version,omitempty"`
+	DisableTCPKeepalive bool   `json:"disableTCPKeepalive,omitempty"`
 }
 type PushRsp struct {
 	Error  int    `json:"error,omitempty"`

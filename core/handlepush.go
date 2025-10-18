@@ -270,10 +270,11 @@ func handleConnectReq(msg []byte) (err error) {
 	if compareVersion(req.Version, LeastSupportVersion) < 0 {
 		gLog.Println(LvERROR, ErrVersionNotCompatible.Error(), ":", req.From)
 		rsp := PushConnectRsp{
-			Error:  10,
-			Detail: ErrVersionNotCompatible.Error(),
-			To:     req.From,
-			From:   gConf.Network.Node,
+			Error:               10,
+			Detail:              ErrVersionNotCompatible.Error(),
+			To:                  req.From,
+			From:                gConf.Network.Node,
+			DisableTCPKeepalive: gConf.DisableTCPKeepalive,
 		}
 		GNetwork.push(req.From, MsgPushConnectRsp, rsp)
 		return ErrVersionNotCompatible
@@ -295,6 +296,7 @@ func handleConnectReq(msg []byte) (err error) {
 		config.linkMode = req.LinkMode
 		config.isUnderlayServer = req.IsUnderlayServer
 		config.UnderlayProtocol = req.UnderlayProtocol
+		config.peerDisableTCPKeepalive = req.DisableTCPKeepalive
 		// share relay node will limit bandwidth
 		if req.Token != gConf.Network.Token {
 			gLog.Printf(LvINFO, "set share bandwidth %d mbps", gConf.Network.ShareBandwidth)
@@ -308,10 +310,11 @@ func handleConnectReq(msg []byte) (err error) {
 	}
 	gLog.Println(LvERROR, "Access Denied:", req.From)
 	rsp := PushConnectRsp{
-		Error:  1,
-		Detail: fmt.Sprintf("connect to %s error: Access Denied", gConf.Network.Node),
-		To:     req.From,
-		From:   gConf.Network.Node,
+		Error:               1,
+		Detail:              fmt.Sprintf("connect to %s error: Access Denied", gConf.Network.Node),
+		To:                  req.From,
+		From:                gConf.Network.Node,
+		DisableTCPKeepalive: gConf.DisableTCPKeepalive,
 	}
 	return GNetwork.push(req.From, MsgPushConnectRsp, rsp)
 }

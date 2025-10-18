@@ -29,25 +29,26 @@ type AppConfig struct {
 	ForceRelay       int // default:0 disable;1 enable
 	Enabled          int // default:1
 	// runtime info
-	relayMode        string // private|public
-	peerVersion      string
-	peerToken        uint64
-	peerNatType      int
-	peerLanIP        string
-	hasIPv4          int
-	peerIPv6         string
-	hasUPNPorNATPMP  int
-	peerIP           string
-	peerConeNatPort  int
-	retryNum         int
-	retryTime        time.Time
-	nextRetryTime    time.Time
-	shareBandwidth   int
-	errMsg           string
-	connectTime      time.Time
-	fromToken        uint64
-	linkMode         string
-	isUnderlayServer int
+	relayMode               string // private|public
+	peerVersion             string
+	peerToken               uint64
+	peerNatType             int
+	peerLanIP               string
+	hasIPv4                 int
+	peerIPv6                string
+	hasUPNPorNATPMP         int
+	peerIP                  string
+	peerConeNatPort         int
+	peerDisableTCPKeepalive bool
+	retryNum                int
+	retryTime               time.Time
+	nextRetryTime           time.Time
+	shareBandwidth          int
+	errMsg                  string
+	connectTime             time.Time
+	fromToken               uint64
+	linkMode                string
+	isUnderlayServer        int
 }
 
 const (
