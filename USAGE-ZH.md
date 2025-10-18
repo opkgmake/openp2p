@@ -72,10 +72,34 @@ nohup ./openp2p -d -node OFFICEPC1 -token TOKEN  &
 }
 ```
 
+## 获取无额外数据的直连 TCP 隧道
+
+某些应用（比如自定义协议或设备）要求直连 TCP 隧道里只能出现业务侧原始字节。可以通过 `disableTCPKeepalive` 功能关闭 OpenP2P 的保活/心跳帧，并在双方之间协商启用“原始直通”传输模式。
+
+1. **确保双方都升级到支持该功能的版本。** `disableTCPKeepalive` 需要新版本客户端才能理解推送协商消息，旧版本会忽略选项并继续使用带帧的兼容模式。
+2. **在两个节点上都启用 `--kk` 选项。** 例如：
+   ```bash
+   ./openp2p -d --kk -node NODE_A -token TOKEN_A
+   ./openp2p -d --kk -node NODE_B -token TOKEN_B
+   ```
+   `--kk` 会在内存配置里设置 `disableTCPKeepalive=true`，直连 TCP 隧道建立后不会主动发送任何心跳包。
+3. **或在配置文件里长期启用。** 在 `config.json` 顶层加入：
+   ```json
+   {
+     "disableTCPKeepalive": true,
+     "network": { ... },
+     "apps": [ ... ]
+   }
+   ```
+   这样即使通过 `./openp2p -d` 从配置启动，也会自动带上该偏好。
+4. **等待双方完成原始传输协商。** 当两个节点都开启了该选项并成功打通直连 TCP 隧道时，日志会出现类似 `tunnel entering raw direct mode` 的调试信息，之后 `GET /` 等业务数据会直接沿用系统 TCP 流复制，不再穿插任何控制帧。
+
+> ⚠️ 如果任一节点未启用 `disableTCPKeepalive`、原始会话握手 5 秒内未完成，或隧道被迫转为中继，OpenP2P 会自动退回默认的带帧通道继续通信，以保证连接稳定性。
+
 ## 升级客户端
 ```
 # update local client
-./openp2p update  
+./openp2p update
 # update remote client
 curl --insecure 'https://api.openp2p.cn:27183/api/v1/device/YOUR-NODE-NAME/update?user=&password='
 ```

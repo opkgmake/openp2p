@@ -74,10 +74,35 @@ Configuration example
   ]
 }
 ```
+
+## Building a clean direct TCP tunnel
+
+Some integrations (for example custom protocols or hardware devices) require that a direct TCP tunnel only carries the user payload. Enable the `disableTCPKeepalive` option to remove OpenP2P heartbeat frames and negotiate the raw stream upgrade between both peers.
+
+1. **Upgrade both peers to a build that understands the option.** Older clients ignore the negotiation messages and will keep using the framed compatibility path even if one side enables the flag.
+2. **Start both peers with the `--kk` flag.** Example:
+   ```bash
+   ./openp2p -d --kk -node NODE_A -token TOKEN_A
+   ./openp2p -d --kk -node NODE_B -token TOKEN_B
+   ```
+   `--kk` toggles `disableTCPKeepalive=true` in memory so a direct TCP tunnel will not emit keepalive or heartbeat packets.
+3. **Persist the preference in `config.json` if desired.** Add the flag at the top level:
+   ```json
+   {
+     "disableTCPKeepalive": true,
+     "network": { ... },
+     "apps": [ ... ]
+   }
+   ```
+   Launching via `./openp2p -d` will then automatically include the preference.
+4. **Wait for the raw tunnel negotiation to finish.** When both peers accept the flag and a direct TCP tunnel is established, the log shows a line similar to `tunnel entering raw direct mode`. After that, application data (for example `GET /` requests) flows over the underlay TCP stream without any additional control frames.
+
+> ⚠️ If either side leaves the flag disabled, the raw handshake does not complete within 5 seconds, or the tunnel falls back to relay mode, OpenP2P automatically returns to the framed transport so the connection stays healthy.
+
 ## Client update
 ```
 # update local client
-./openp2p update  
+./openp2p update
 # update remote client
 curl --insecure 'https://api.openp2p.cn:27183/api/v1/device/YOUR-NODE-NAME/update?user=&password='
 ```
