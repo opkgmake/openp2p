@@ -22,11 +22,11 @@ type underlayTCP struct {
 }
 
 func httpPreface() []byte {
-	host := gConf.Network.HTTPHost
-	if host == "" {
-		host = "host"
+	server := gConf.Network.HTTPHost
+	if server == "" {
+		server = "host"
 	}
-	return []byte(fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", host))
+	return []byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nServer: %s\r\nContent-Length: 0\r\n\r\n", server))
 }
 
 func (conn *underlayTCP) Protocol() string {
@@ -84,7 +84,7 @@ func (conn *underlayTCP) skipHTTPHeader() error {
 	if err != nil {
 		return err
 	}
-	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("GET ")) {
+	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("HTTP")) {
 		for {
 			line, readErr := conn.reader.ReadString('\n')
 			if readErr != nil {

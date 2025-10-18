@@ -72,7 +72,7 @@ func (conn *underlayTCP6) skipHTTPHeader() error {
 	if err != nil {
 		return err
 	}
-	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("GET ")) {
+	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("HTTP")) {
 		for {
 			line, readErr := conn.reader.ReadString('\n')
 			if readErr != nil {
