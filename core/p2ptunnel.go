@@ -573,7 +573,9 @@ func (t *P2PTunnel) readLoop() {
 			t.hbMtx.Lock()
 			t.hbTime = time.Now()
 			t.hbMtx.Unlock()
-			t.conn.WriteBytes(MsgP2P, MsgTunnelHeartbeatAck, nil)
+			if !t.disableTCPHeartbeat() {
+				t.conn.WriteBytes(MsgP2P, MsgTunnelHeartbeatAck, nil)
+			}
 			gLog.Printf(LvDev, "%d read tunnel heartbeat", t.id)
 		case MsgTunnelHeartbeatAck:
 			t.hbMtx.Lock()
@@ -630,7 +632,9 @@ func (t *P2PTunnel) readLoop() {
 			// update app hbtime
 			GNetwork.updateAppHeartbeat(req.AppID)
 			req.From = gConf.Network.Node
-			t.WriteMessage(req.RelayTunnelID, MsgP2P, MsgRelayHeartbeatAck, &req)
+			if !t.disableTCPHeartbeat() {
+				t.WriteMessage(req.RelayTunnelID, MsgP2P, MsgRelayHeartbeatAck, &req)
+			}
 		case MsgRelayHeartbeatAck:
 			req := RelayHeartbeat{}
 			err := json.Unmarshal(body, &req)

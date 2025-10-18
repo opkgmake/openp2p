@@ -606,6 +606,10 @@ func (app *p2pApp) relayHeartbeatLoop() {
 			time.Sleep(TunnelHeartbeatTime)
 			continue
 		}
+		if gConf.DisableTCPKeepalive && app.isDirect() {
+			time.Sleep(TunnelHeartbeatTime)
+			continue
+		}
 		req := RelayHeartbeat{From: gConf.Network.Node, RelayTunnelID: app.RelayTunnel().id,
 			AppID: app.id}
 		err := app.RelayTunnel().WriteMessage(app.rtid, MsgP2P, MsgRelayHeartbeat, &req)
