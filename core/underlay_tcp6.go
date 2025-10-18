@@ -1,6 +1,7 @@
 package openp2p
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"sync"
@@ -10,6 +11,9 @@ import (
 type underlayTCP6 struct {
 	writeMtx *sync.Mutex
 	net.Conn
+	reader            *bufio.Reader
+	httpHeaderSent    bool
+	httpHeaderSkipped bool
 }
 
 func (conn *underlayTCP6) Protocol() string {
@@ -21,15 +25,32 @@ func (conn *underlayTCP6) ReadBuffer() (*openP2PHeader, []byte, error) {
 }
 
 func (conn *underlayTCP6) WriteBytes(mainType uint16, subType uint16, data []byte) error {
-	return DefaultWriteBytes(conn, mainType, subType, data)
+	writeBytes := append(encodeHeader(mainType, subType, uint32(len(data))), data...)
+	return conn.writeWithHTTPPrefix(writeBytes)
 }
 
 func (conn *underlayTCP6) WriteBuffer(data []byte) error {
-	return DefaultWriteBuffer(conn, data)
+	return conn.writeWithHTTPPrefix(data)
 }
 
 func (conn *underlayTCP6) WriteMessage(mainType uint16, subType uint16, packet interface{}) error {
-	return DefaultWriteMessage(conn, mainType, subType, packet)
+	writeBytes, err := newMessage(mainType, subType, packet)
+	if err != nil {
+		return err
+	}
+	return conn.writeWithHTTPPrefix(writeBytes)
+}
+
+func (conn *underlayTCP6) Read(b []byte) (int, error) {
+	if conn.reader == nil {
+		conn.reader = bufio.NewReader(conn.Conn)
+	}
+	if !conn.httpHeaderSkipped {
+		if err := conn.skipHTTPHeader(); err != nil {
+			return 0, err
+		}
+	}
+	return conn.reader.Read(b)
 }
 
 func (conn *underlayTCP6) Close() error {
@@ -40,6 +61,37 @@ func (conn *underlayTCP6) WLock() {
 }
 func (conn *underlayTCP6) WUnlock() {
 	conn.writeMtx.Unlock()
+}
+
+func (conn *underlayTCP6) skipHTTPHeader() error {
+	if conn.reader == nil {
+		conn.reader = bufio.NewReader(conn.Conn)
+	}
+	if err := skipHTTPHeaders(conn.reader); err != nil {
+		return err
+	}
+	conn.httpHeaderSkipped = true
+	return nil
+}
+
+func (conn *underlayTCP6) writeWithHTTPPrefix(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	conn.SetWriteDeadline(time.Now().Add(TunnelHeartbeatTime / 2))
+	conn.WLock()
+	defer conn.WUnlock()
+	if !conn.httpHeaderSent {
+		if prefix := httpPreface(); len(prefix) > 0 {
+			merged := make([]byte, len(prefix)+len(data))
+			copy(merged, prefix)
+			copy(merged[len(prefix):], data)
+			data = merged
+		}
+		conn.httpHeaderSent = true
+	}
+	_, err := conn.Conn.Write(data)
+	return err
 }
 func listenTCP6(port int, timeout time.Duration) (*underlayTCP6, error) {
 	addr, _ := net.ResolveTCPAddr("tcp6", fmt.Sprintf("[::]:%d", port))
@@ -54,7 +106,7 @@ func listenTCP6(port int, timeout time.Duration) (*underlayTCP6, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &underlayTCP6{writeMtx: &sync.Mutex{}, Conn: c}, nil
+	return &underlayTCP6{writeMtx: &sync.Mutex{}, Conn: c, reader: bufio.NewReader(c)}, nil
 }
 
 func dialTCP6(host string, port int) (*underlayTCP6, error) {
@@ -63,5 +115,5 @@ func dialTCP6(host string, port int) (*underlayTCP6, error) {
 		gLog.Printf(LvERROR, "Dial %s:%d error:%s", host, port, err)
 		return nil, err
 	}
-	return &underlayTCP6{writeMtx: &sync.Mutex{}, Conn: c}, nil
+	return &underlayTCP6{writeMtx: &sync.Mutex{}, Conn: c, reader: bufio.NewReader(c)}, nil
 }

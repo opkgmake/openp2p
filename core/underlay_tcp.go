@@ -1,6 +1,8 @@
 package openp2p
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -13,7 +15,56 @@ import (
 type underlayTCP struct {
 	writeMtx *sync.Mutex
 	net.Conn
-	connectTime time.Time
+	connectTime       time.Time
+	reader            *bufio.Reader
+	httpHeaderSent    bool
+	httpHeaderSkipped bool
+}
+
+func httpPreface() []byte {
+	server := gConf.Network.HTTPHost
+	if server == "" {
+		server = "host"
+	}
+	switch gConf.Network.HTTPDisguise {
+	case "response":
+		return []byte(fmt.Sprintf("HTTP/1.1 200 OK\r\nServer: %s\r\nContent-Length: 0\r\n\r\n", server))
+	case "request":
+		fallthrough
+	default:
+		return []byte(fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\n\r\n", server))
+	}
+}
+
+func skipHTTPHeaders(reader *bufio.Reader) error {
+	peek, err := reader.Peek(4)
+	if err != nil && len(peek) == 0 {
+		return err
+	}
+	if len(peek) >= 3 && bytes.Equal(peek[:3], []byte("GET")) {
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return readErr
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		return nil
+	}
+	if len(peek) >= 4 && bytes.Equal(peek[:4], []byte("HTTP")) {
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return readErr
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func (conn *underlayTCP) Protocol() string {
@@ -25,15 +76,32 @@ func (conn *underlayTCP) ReadBuffer() (*openP2PHeader, []byte, error) {
 }
 
 func (conn *underlayTCP) WriteBytes(mainType uint16, subType uint16, data []byte) error {
-	return DefaultWriteBytes(conn, mainType, subType, data)
+	writeBytes := append(encodeHeader(mainType, subType, uint32(len(data))), data...)
+	return conn.writeWithHTTPPrefix(writeBytes)
 }
 
 func (conn *underlayTCP) WriteBuffer(data []byte) error {
-	return DefaultWriteBuffer(conn, data)
+	return conn.writeWithHTTPPrefix(data)
 }
 
 func (conn *underlayTCP) WriteMessage(mainType uint16, subType uint16, packet interface{}) error {
-	return DefaultWriteMessage(conn, mainType, subType, packet)
+	writeBytes, err := newMessage(mainType, subType, packet)
+	if err != nil {
+		return err
+	}
+	return conn.writeWithHTTPPrefix(writeBytes)
+}
+
+func (conn *underlayTCP) Read(b []byte) (int, error) {
+	if conn.reader == nil {
+		conn.reader = bufio.NewReader(conn.Conn)
+	}
+	if !conn.httpHeaderSkipped {
+		if err := conn.skipHTTPHeader(); err != nil {
+			return 0, err
+		}
+	}
+	return conn.reader.Read(b)
 }
 
 func (conn *underlayTCP) Close() error {
@@ -44,6 +112,37 @@ func (conn *underlayTCP) WLock() {
 }
 func (conn *underlayTCP) WUnlock() {
 	conn.writeMtx.Unlock()
+}
+
+func (conn *underlayTCP) skipHTTPHeader() error {
+	if conn.reader == nil {
+		conn.reader = bufio.NewReader(conn.Conn)
+	}
+	if err := skipHTTPHeaders(conn.reader); err != nil {
+		return err
+	}
+	conn.httpHeaderSkipped = true
+	return nil
+}
+
+func (conn *underlayTCP) writeWithHTTPPrefix(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	conn.SetWriteDeadline(time.Now().Add(TunnelHeartbeatTime / 2))
+	conn.WLock()
+	defer conn.WUnlock()
+	if !conn.httpHeaderSent {
+		if prefix := httpPreface(); len(prefix) > 0 {
+			merged := make([]byte, len(prefix)+len(data))
+			copy(merged, prefix)
+			copy(merged[len(prefix):], data)
+			data = merged
+		}
+		conn.httpHeaderSent = true
+	}
+	_, err := conn.Conn.Write(data)
+	return err
 }
 
 func listenTCP(host string, port int, localPort int, mode string, t *P2PTunnel) (*underlayTCP, error) {
@@ -61,7 +160,7 @@ func listenTCP(host string, port int, localPort int, mode string, t *P2PTunnel) 
 			gLog.Println(LvDEBUG, "send tcp punch: ", err)
 			return nil, err
 		}
-		utcp := &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c}
+		utcp := &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c, reader: bufio.NewReader(c)}
 		_, buff, err := utcp.ReadBuffer()
 		if err != nil {
 			return nil, fmt.Errorf("read start msg error:%s", err)
@@ -97,7 +196,7 @@ func listenTCP(host string, port int, localPort int, mode string, t *P2PTunnel) 
 		if err != nil {
 			return nil, err
 		}
-		utcp = &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c}
+		utcp = &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c, reader: bufio.NewReader(c)}
 	} else {
 		if v4l != nil {
 			utcp = v4l.getUnderlayTCP(tid)
@@ -131,5 +230,5 @@ func dialTCP(host string, port int, localPort int, mode string) (*underlayTCP, e
 	tc.SetKeepAlive(true)
 	tc.SetKeepAlivePeriod(UnderlayTCPKeepalive)
 	gLog.Printf(LvDEBUG, "Dial %s:%d OK", host, port)
-	return &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c}, nil
+	return &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c, reader: bufio.NewReader(c)}, nil
 }

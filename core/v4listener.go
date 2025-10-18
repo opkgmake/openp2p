@@ -1,6 +1,7 @@
 package openp2p
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -43,7 +44,7 @@ func (vl *v4Listener) listen() error {
 }
 func (vl *v4Listener) handleConnection(c net.Conn) {
 	gLog.Println(LvDEBUG, "v4Listener accept connection: ", c.RemoteAddr().String())
-	utcp := &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c, connectTime: time.Now()}
+	utcp := &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c, connectTime: time.Now(), reader: bufio.NewReader(c)}
 	utcp.SetReadDeadline(time.Now().Add(UnderlayTCPConnectTimeout))
 	_, buff, err := utcp.ReadBuffer()
 	if err != nil {
