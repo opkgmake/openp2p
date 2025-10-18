@@ -16,11 +16,8 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-// quic.DialContext do not support version 44,disable it
-var quicVersion []quic.VersionNumber
-
 type underlayQUIC struct {
-	listener quic.Listener
+	listener *quic.Listener
 	writeMtx *sync.Mutex
 	quic.Stream
 	quic.Connection
@@ -83,7 +80,7 @@ func (conn *underlayQUIC) Accept() error {
 func listenQuic(addr string, idleTimeout time.Duration) (*underlayQUIC, error) {
 	gLog.Println(LvDEBUG, "quic listen on ", addr)
 	listener, err := quic.ListenAddr(addr, generateTLSConfig(),
-		&quic.Config{Versions: quicVersion, MaxIdleTimeout: idleTimeout, DisablePathMTUDiscovery: true})
+		&quic.Config{MaxIdleTimeout: idleTimeout, DisablePathMTUDiscovery: true})
 	if err != nil {
 		return nil, fmt.Errorf("quic.ListenAddr error:%s", err)
 	}
@@ -101,16 +98,16 @@ func dialQuic(conn *net.UDPConn, remoteAddr *net.UDPAddr, idleTimeout time.Durat
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"openp2pv1"},
 	}
-	Connection, err := quic.DialContext(context.Background(), conn, remoteAddr, conn.LocalAddr().String(), tlsConf,
-		&quic.Config{Versions: quicVersion, MaxIdleTimeout: idleTimeout, DisablePathMTUDiscovery: true})
+	Connection, err := quic.Dial(context.Background(), conn, remoteAddr, tlsConf,
+		&quic.Config{MaxIdleTimeout: idleTimeout, DisablePathMTUDiscovery: true})
 	if err != nil {
-		return nil, fmt.Errorf("quic.DialContext error:%s", err)
+		return nil, fmt.Errorf("quic.Dial error:%s", err)
 	}
 	stream, err := Connection.OpenStreamSync(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("OpenStreamSync error:%s", err)
 	}
-	qConn := &underlayQUIC{nil, &sync.Mutex{}, stream, Connection}
+	qConn := &underlayQUIC{listener: nil, writeMtx: &sync.Mutex{}, Stream: stream, Connection: Connection}
 	return qConn, nil
 }
 

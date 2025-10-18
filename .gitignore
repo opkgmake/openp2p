@@ -4,7 +4,6 @@ __debug_bin.exe
 test/
 openp2p.exe*
 *.log*
-go.sum
 *.tar.gz
 *.zip
 *.exe
