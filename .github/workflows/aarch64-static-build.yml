@@ -1,0 +1,46 @@
+name: Build static Linux binaries
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Static build (linux/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [arm64, amd64]
+    env:
+      GOOS: linux
+      GOARCH: ${{ matrix.arch }}
+      CGO_ENABLED: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.3'
+          cache: true
+
+      - name: Build static binary
+        run: |
+          mkdir -p dist
+          go env
+          go build \
+            -trimpath \
+            -ldflags "-s -w" \
+            -gcflags "-l" \
+            -o dist/openp2p-linux-${GOARCH} \
+            ./cmd
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openp2p-linux-${{ matrix.arch }}
+          path: dist/openp2p-linux-${{ matrix.arch }}
+          if-no-files-found: error
