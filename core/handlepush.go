@@ -176,6 +176,23 @@ func handlePush(subType uint16, msg []byte) error {
 			return nil
 		}
 		tunnel.processOverlayDisconnectReq(&req)
+	case MsgPushOverlayRawReady:
+		req := OverlayRawReady{}
+		if err = json.Unmarshal(msg[openP2PHeaderSize+PushHeaderSize:], &req); err != nil {
+			gLog.Printf(LvERROR, "wrong %v:%s", reflect.TypeOf(req), err)
+			return err
+		}
+		app := GNetwork.findAppByID(req.AppID)
+		if app == nil {
+			gLog.Printf(LvERROR, "overlay raw ready push app %d not found", req.AppID)
+			return nil
+		}
+		tunnel := app.DirectTunnel()
+		if tunnel == nil {
+			gLog.Printf(LvERROR, "overlay raw ready push app %d has no direct tunnel", req.AppID)
+			return nil
+		}
+		tunnel.signalRawReady(req.ID)
 	case MsgPushReportGoroutine:
 		err = handleReportGoroutine()
 	case MsgPushCheckRemoteService:

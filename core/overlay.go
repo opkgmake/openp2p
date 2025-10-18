@@ -12,6 +12,8 @@ import (
 
 var ErrDeadlineExceeded error = &DeadlineExceededError{}
 
+const rawReadyTimeout = time.Second * 5
+
 // DeadlineExceededError is returned for an expired deadline.
 type DeadlineExceededError struct{}
 
@@ -44,15 +46,42 @@ type overlayConn struct {
 
 func (oConn *overlayConn) run() {
 	if oConn.tunnel.useRawDirect() && oConn.connTCP != nil && oConn.rtid == 0 {
-		oConn.runRaw()
-		return
+		if oConn.prepareRawSession() {
+			oConn.runRaw()
+			return
+		}
 	}
 	oConn.runFramed()
+}
+
+func (oConn *overlayConn) prepareRawSession() bool {
+	if !oConn.tunnel.beginRawSession() {
+		gLog.Printf(LvERROR, "%d overlayConn raw session already active", oConn.id)
+		oConn.tunnel.overlayConns.Delete(oConn.id)
+		req := OverlayDisconnectReq{ID: oConn.id, AppID: oConn.appID}
+		if err := oConn.tunnel.sendOverlayDisconnect(oConn.rtid, &req); err != nil {
+			gLog.Printf(LvERROR, "overlayConn %d send disconnect error:%s", oConn.id, err)
+		}
+		oConn.Close()
+		return false
+	}
+	if oConn.isClient {
+		if !oConn.tunnel.awaitRawReady(oConn.id, rawReadyTimeout) {
+			gLog.Printf(LvERROR, "%d overlayConn raw handshake timeout", oConn.id)
+			oConn.tunnel.rawDirect = false
+			oConn.tunnel.startFramedLoops()
+			oConn.tunnel.endRawSession()
+			oConn.tunnel.clearRawReady(oConn.id)
+			return false
+		}
+	}
+	return true
 }
 
 func (oConn *overlayConn) runFramed() {
 	gLog.Printf(LvDEBUG, "%d overlayConn run start", oConn.id)
 	defer gLog.Printf(LvDEBUG, "%d overlayConn run end", oConn.id)
+	defer oConn.tunnel.clearRawReady(oConn.id)
 	oConn.lastReadUDPTs = time.Now()
 	buffer := make([]byte, ReadBuffLen+PaddingSize) // 16 bytes for padding
 	reuseBuff := buffer[:ReadBuffLen]
@@ -105,18 +134,9 @@ func (oConn *overlayConn) runFramed() {
 func (oConn *overlayConn) runRaw() {
 	gLog.Printf(LvDEBUG, "%d overlayConn raw run start", oConn.id)
 	defer gLog.Printf(LvDEBUG, "%d overlayConn raw run end", oConn.id)
+	defer oConn.tunnel.clearRawReady(oConn.id)
 	if oConn.connTCP == nil {
 		gLog.Printf(LvERROR, "%d overlayConn raw mode requires tcp connection", oConn.id)
-		return
-	}
-	if !oConn.tunnel.beginRawSession() {
-		gLog.Printf(LvERROR, "%d overlayConn raw session already active", oConn.id)
-		oConn.tunnel.overlayConns.Delete(oConn.id)
-		req := OverlayDisconnectReq{ID: oConn.id, AppID: oConn.appID}
-		if err := oConn.tunnel.sendOverlayDisconnect(oConn.rtid, &req); err != nil {
-			gLog.Printf(LvERROR, "overlayConn %d send disconnect error:%s", oConn.id, err)
-		}
-		oConn.Close()
 		return
 	}
 	defer oConn.tunnel.endRawSession()

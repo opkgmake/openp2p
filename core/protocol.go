@@ -111,6 +111,7 @@ const (
 	MsgPushCheckRemoteService   = 19
 	MsgPushOverlayConnectReq    = 20
 	MsgPushOverlayDisconnectReq = 21
+	MsgPushOverlayRawReady      = 22
 )
 
 // MsgP2P sub type message
@@ -324,8 +325,13 @@ type OverlayConnectReq struct {
 	Protocol      string `json:"protocol,omitempty"`
 	RelayTunnelID uint64 `json:"relayTunnelID,omitempty"` // if not 0 relay
 	AppID         uint64 `json:"appID,omitempty"`
+	RawDirect     bool   `json:"rawDirect,omitempty"`
 }
 type OverlayDisconnectReq struct {
+	ID    uint64 `json:"id,omitempty"`
+	AppID uint64 `json:"appID,omitempty"`
+}
+type OverlayRawReady struct {
 	ID    uint64 `json:"id,omitempty"`
 	AppID uint64 `json:"appID,omitempty"`
 }

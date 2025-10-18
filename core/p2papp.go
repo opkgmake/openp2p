@@ -443,11 +443,12 @@ func (app *p2pApp) listenTCP() error {
 		gLog.Printf(LvDEBUG, "Accept TCP overlayID:%d, %s", oConn.id, oConn.connTCP.RemoteAddr())
 		// tell peer connect
 		req := OverlayConnectReq{ID: oConn.id,
-			Token:    gConf.Network.Token,
-			DstIP:    app.config.DstHost,
-			DstPort:  app.config.DstPort,
-			Protocol: app.config.Protocol,
-			AppID:    app.id,
+			Token:     gConf.Network.Token,
+			DstIP:     app.config.DstHost,
+			DstPort:   app.config.DstPort,
+			Protocol:  app.config.Protocol,
+			AppID:     app.id,
+			RawDirect: app.config.Protocol == "tcp" && app.Tunnel().useRawDirect(),
 		}
 		if !app.isDirect() {
 			req.RelayTunnelID = app.Tunnel().id
@@ -530,11 +531,12 @@ func (app *p2pApp) listenUDP() error {
 				gLog.Printf(LvDEBUG, "Accept UDP overlayID:%d", oConn.id)
 				// tell peer connect
 				req := OverlayConnectReq{ID: oConn.id,
-					Token:    gConf.Network.Token,
-					DstIP:    app.config.DstHost,
-					DstPort:  app.config.DstPort,
-					Protocol: app.config.Protocol,
-					AppID:    app.id,
+					Token:     gConf.Network.Token,
+					DstIP:     app.config.DstHost,
+					DstPort:   app.config.DstPort,
+					Protocol:  app.config.Protocol,
+					AppID:     app.id,
+					RawDirect: app.config.Protocol == "tcp" && app.Tunnel().useRawDirect(),
 				}
 				if !app.isDirect() {
 					req.RelayTunnelID = app.Tunnel().id

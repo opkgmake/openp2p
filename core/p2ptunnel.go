@@ -37,8 +37,25 @@ type P2PTunnel struct {
 	punchTs        uint64
 	writeData      chan []byte
 	writeDataSmall chan []byte
+	framedOnce     sync.Once
 	rawDirect      bool
 	rawActive      int32
+	rawReady       sync.Map
+}
+
+type rawReadyWaiter struct {
+	ch   chan struct{}
+	once sync.Once
+}
+
+func newRawReadyWaiter() *rawReadyWaiter {
+	return &rawReadyWaiter{ch: make(chan struct{})}
+}
+
+func (w *rawReadyWaiter) signal() {
+	w.once.Do(func() {
+		close(w.ch)
+	})
 }
 
 func (t *P2PTunnel) initPort() {
@@ -137,6 +154,9 @@ func (t *P2PTunnel) disableTCPHeartbeat() bool {
 	if t.conn == nil {
 		return false
 	}
+	if !t.rawDirect {
+		return false
+	}
 	return strings.HasPrefix(t.conn.Protocol(), "tcp")
 }
 
@@ -157,6 +177,47 @@ func (t *P2PTunnel) beginRawSession() bool {
 
 func (t *P2PTunnel) endRawSession() {
 	atomic.StoreInt32(&t.rawActive, 0)
+}
+
+func (t *P2PTunnel) rawWaiter(id uint64) *rawReadyWaiter {
+	waiter := newRawReadyWaiter()
+	if actual, loaded := t.rawReady.LoadOrStore(id, waiter); loaded {
+		waiter = actual.(*rawReadyWaiter)
+	}
+	return waiter
+}
+
+func (t *P2PTunnel) awaitRawReady(id uint64, timeout time.Duration) bool {
+	waiter := t.rawWaiter(id)
+	if timeout <= 0 {
+		<-waiter.ch
+		return true
+	}
+	select {
+	case <-waiter.ch:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+func (t *P2PTunnel) signalRawReady(id uint64) {
+	waiter := t.rawWaiter(id)
+	waiter.signal()
+}
+
+func (t *P2PTunnel) clearRawReady(id uint64) {
+	if v, ok := t.rawReady.Load(id); ok {
+		t.rawReady.Delete(id)
+		v.(*rawReadyWaiter).signal()
+	}
+}
+
+func (t *P2PTunnel) startFramedLoops() {
+	t.framedOnce.Do(func() {
+		go t.readLoop()
+		go t.writeLoop()
+	})
 }
 
 func (t *P2PTunnel) isActive() bool {
@@ -295,8 +356,7 @@ func (t *P2PTunnel) connectUnderlay() (err error) {
 	if t.rawDirect {
 		gLog.Printf(LvDEBUG, "%s:%d tunnel entering raw direct mode", t.config.LogPeerNode(), t.id)
 	} else {
-		go t.readLoop()
-		go t.writeLoop()
+		t.startFramedLoops()
 	}
 	return nil
 }
@@ -817,6 +877,12 @@ func (t *P2PTunnel) processOverlayConnectReq(req *OverlayConnectReq) {
 	}
 
 	t.overlayConns.Store(oConn.id, &oConn)
+	if req.Protocol == "tcp" && req.RelayTunnelID == 0 && req.RawDirect && t.disableTCPHeartbeat() {
+		ack := OverlayRawReady{ID: oConn.id, AppID: oConn.appID}
+		if err := GNetwork.push(t.config.PeerNode, MsgPushOverlayRawReady, &ack); err != nil {
+			gLog.Printf(LvERROR, "overlayConn %d send raw ready error:%s", oConn.id, err)
+		}
+	}
 	go oConn.run()
 }
 
