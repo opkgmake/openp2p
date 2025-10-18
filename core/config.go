@@ -77,14 +77,15 @@ type Config struct {
 	Network NetworkConfig `json:"network"`
 	Apps    []*AppConfig  `json:"apps"`
 
-	LogLevel   int
-	MaxLogSize int
-	daemonMode bool
-	mtx        sync.Mutex
-	sdwanMtx   sync.Mutex
-	sdwan      SDWANInfo
-	delNodes   []*SDWANNode
-	addNodes   []*SDWANNode
+	LogLevel            int
+	MaxLogSize          int
+	DisableTCPKeepalive bool `json:"disableTCPKeepalive,omitempty"`
+	daemonMode          bool
+	mtx                 sync.Mutex
+	sdwanMtx            sync.Mutex
+	sdwan               SDWANInfo
+	delNodes            []*SDWANNode
+	addNodes            []*SDWANNode
 }
 
 func (c *Config) getSDWAN() SDWANInfo {
@@ -392,6 +393,20 @@ type NetworkConfig struct {
 	TCPPort    int
 }
 
+func normalizeKKArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	normalized := make([]string, len(args))
+	copy(normalized, args)
+	for i, arg := range normalized {
+		if strings.HasPrefix(arg, "--kk") {
+			normalized[i] = "-" + arg[2:]
+		}
+	}
+	return normalized
+}
+
 func parseParams(subCommand string, cmd string) {
 	fset := flag.NewFlagSet(subCommand, flag.ExitOnError)
 	serverHost := fset.String("serverhost", "api.openp2p.cn", "server host ")
@@ -416,16 +431,19 @@ func parseParams(subCommand string, cmd string) {
 	newconfig := fset.Bool("newconfig", false, "not load existing config.json")
 	logLevel := fset.Int("loglevel", 1, "0:debug 1:info 2:warn 3:error")
 	maxLogSize := fset.Int("maxlogsize", 1024*1024, "default 1MB")
+	kk := fset.Bool("kk", false, "disable tcp keepalive and tunnel heartbeat on direct tcp connections")
 	if cmd == "" {
 		if subCommand == "" { // no subcommand
-			fset.Parse(os.Args[1:])
+			args := normalizeKKArgs(os.Args[1:])
+			fset.Parse(args)
 		} else {
-			fset.Parse(os.Args[2:])
+			args := normalizeKKArgs(os.Args[2:])
+			fset.Parse(args)
 		}
 	} else {
 		gLog.Println(LvINFO, "cmd=", cmd)
 		args := strings.Split(cmd, " ")
-		fset.Parse(args)
+		fset.Parse(normalizeKKArgs(args))
 	}
 
 	gLog.setMaxSize(int64(*maxLogSize))
@@ -470,6 +488,9 @@ func parseParams(subCommand string, cmd string) {
 		}
 		if f.Name == "token" {
 			gConf.setToken(*token)
+		}
+		if f.Name == "kk" {
+			gConf.DisableTCPKeepalive = *kk
 		}
 	})
 	// set default value

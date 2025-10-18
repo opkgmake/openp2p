@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -125,9 +126,22 @@ func (t *P2PTunnel) setRun(running bool) {
 	t.running = running
 }
 
+func (t *P2PTunnel) disableTCPHeartbeat() bool {
+	if !gConf.DisableTCPKeepalive {
+		return false
+	}
+	if t.conn == nil {
+		return false
+	}
+	return strings.HasPrefix(t.conn.Protocol(), "tcp")
+}
+
 func (t *P2PTunnel) isActive() bool {
 	if !t.isRuning() || t.conn == nil {
 		return false
+	}
+	if t.disableTCPHeartbeat() {
+		return true
 	}
 	t.hbMtx.Lock()
 	defer t.hbMtx.Unlock()
@@ -141,6 +155,9 @@ func (t *P2PTunnel) isActive() bool {
 func (t *P2PTunnel) checkActive() bool {
 	if !t.isActive() {
 		return false
+	}
+	if t.disableTCPHeartbeat() {
+		return true
 	}
 	hbt := time.Now()
 	t.conn.WriteBytes(MsgP2P, MsgTunnelHeartbeat, nil)
@@ -534,7 +551,11 @@ func (t *P2PTunnel) readLoop() {
 	decryptData := make([]byte, ReadBuffLen+PaddingSize) // 16 bytes for padding
 	gLog.Printf(LvDEBUG, "%d tunnel readloop start", t.id)
 	for t.isRuning() {
-		t.conn.SetReadDeadline(time.Now().Add(TunnelHeartbeatTime * 2))
+		if t.disableTCPHeartbeat() {
+			t.conn.SetReadDeadline(time.Time{})
+		} else {
+			t.conn.SetReadDeadline(time.Now().Add(TunnelHeartbeatTime * 2))
+		}
 		head, body, err := t.conn.ReadBuffer()
 		if err != nil {
 			if t.isRuning() {
@@ -692,8 +713,15 @@ func (t *P2PTunnel) writeLoop() {
 	t.hbMtx.Lock()
 	t.hbTime = time.Now() // init
 	t.hbMtx.Unlock()
-	tc := time.NewTicker(TunnelHeartbeatTime)
-	defer tc.Stop()
+	var (
+		ticker *time.Ticker
+		tc     <-chan time.Time
+	)
+	if !t.disableTCPHeartbeat() {
+		ticker = time.NewTicker(TunnelHeartbeatTime)
+		tc = ticker.C
+		defer ticker.Stop()
+	}
 	gLog.Printf(LvDEBUG, "%s:%d tunnel writeLoop start", t.config.LogPeerNode(), t.id)
 	defer gLog.Printf(LvDEBUG, "%s:%d tunnel writeLoop end", t.config.LogPeerNode(), t.id)
 	for t.isRuning() {
@@ -708,7 +736,7 @@ func (t *P2PTunnel) writeLoop() {
 				// gLog.Printf(LvDEBUG, "write icmp %d", time.Now().Unix())
 			case buff := <-t.writeData:
 				t.conn.WriteBuffer(buff)
-			case <-tc.C:
+			case <-tc:
 				// tunnel send
 				err := t.conn.WriteBytes(MsgP2P, MsgTunnelHeartbeat, nil)
 				if err != nil {

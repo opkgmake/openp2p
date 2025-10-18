@@ -128,8 +128,10 @@ func dialTCP(host string, port int, localPort int, mode string) (*underlayTCP, e
 		return nil, err
 	}
 	tc := c.(*net.TCPConn)
-	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(UnderlayTCPKeepalive)
+	if !gConf.DisableTCPKeepalive {
+		tc.SetKeepAlive(true)
+		tc.SetKeepAlivePeriod(UnderlayTCPKeepalive)
+	}
 	gLog.Printf(LvDEBUG, "Dial %s:%d OK", host, port)
 	return &underlayTCP{writeMtx: &sync.Mutex{}, Conn: c}, nil
 }
